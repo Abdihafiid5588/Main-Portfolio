@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { motion } from 'framer-motion'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import Particles, { initParticlesEngine } from '@tsparticles/react'
-import { loadSlim } from 'tsparticles-slim'
+import Particles,  { initParticlesEngine } from "react-tsparticles";
+import { loadSlim } from "@tsparticles/slim";
 
 gsap.registerPlugin(ScrollTrigger)
 
