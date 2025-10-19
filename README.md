@@ -34,6 +34,17 @@ Particles controls
   - Vite: VITE_ENABLE_PARTICLES=false
   - CRA-style (compatibility): REACT_APP_ENABLE_PARTICLES=false
 
+Env toggles & tuning
+
+- VITE_PARALLAX_MULTIPLIER: number (default 1). Scales the strength of scroll and pointer parallax across layers. Try 0.8 for subtler motion or 1.3 for punchier.
+- VITE_ENABLE_PARTICLES: true/false. Controls particles background (also auto-disabled on mobile and reduced-motion).
+
+Where to tweak timings/colors
+
+- Scroll/entrance timing: see src/sections/Hero.jsx — search for "scrubVal" and GSAP timelines.
+- Header shrink/opacity: see src/components/Header.jsx — height and bgOpacity transforms.
+- Neon/warm colors and gradient: tailwind.config.js (colors, backgroundImage.hero) and src/styles/index.css tokens.
+
 
 Accessibility & performance
 

@@ -4,62 +4,48 @@
 
 /* Theme tokens */
 :root {
-  --bg-dark: #071028;
-  --accent-neon: #00f5ff;
-  --accent-warm: #ff6b6b;
-  --soft-glass: #0f1724;
+  --bg-dark: #071028; /* bg-dark */
+  --accent-neon: #00f5ff; /* primary/neon */
+  --accent-warm: #ff6b6b; /* warm accent */
+  --soft-glass: rgba(255,255,255,0.06); /* use via bg-white/6 in Tailwind */
 }
 
 html, body { background-color: var(--bg-dark); }
 
 /**** Glass + neon helpers ****/
 .glass {
-  background: color-mix(in oklab, var(--soft-glass) 82%, transparent);
-  border: 1px solid color-mix(in oklab, var(--accent-neon) 22%, transparent);
+  background: rgba(15, 23, 36, 0.48);
+  border: 1px solid rgba(0,245,255,0.22);
   box-shadow: 0 8px 32px rgba(0,0,0,.35);
 }
 @supports (backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px)) {
-  .glass {
-    backdrop-filter: blur(12px) saturate(1.15);
-    -webkit-backdrop-filter: blur(12px) saturate(1.15);
-    background: rgba(15, 23, 36, 0.48);
-  }
+  .glass { backdrop-filter: blur(12px) saturate(1.15); -webkit-backdrop-filter: blur(12px) saturate(1.15); }
 }
 
 /* Particles canvas layering */
-.particles-canvas {
-  position: absolute !important;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
+.particles-canvas { position: absolute !important; inset: 0; z-index: 0; pointer-events: none; }
 
 /* Headline word reveal utility */
-.word-clip {
-  display: inline-block;
-  overflow: hidden;
-}
+.word-clip { display: inline-block; overflow: hidden; }
 
-/* CTA shimmer effect */
-.btn-shimmer {
-  position: relative;
-  overflow: hidden;
-}
+/* CTA shimmer effect (hover glint) */
+.btn-shimmer { position: relative; overflow: hidden; }
 .btn-shimmer::after {
-  content: "";
-  position: absolute;
-  top: 0; bottom: 0;
-  width: 40%;
-  transform: translateX(-140%) skewX(-16deg);
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
-  opacity: 0.0;
+  content: ""; position: absolute; top: 0; bottom: 0; width: 40%; transform: translateX(-140%) skewX(-16deg);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); opacity: 0.0;
 }
-.btn-shimmer:hover::after {
-  animation: shimmer 1.2s linear forwards;
-  opacity: 1;
-}
+.btn-shimmer:hover::after { animation: shimmer 1.2s linear forwards; opacity: 1; }
+
+/* Utility helpers for performance */
+.will-transform { will-change: transform; }
+.will-opacity { will-change: opacity; }
+.preserve-3d { transform-style: preserve-3d; }
+
+/* Keyframes used by shimmer (also configured in tailwind.config for utility use) */
+@keyframes shimmer { 0% { transform: translateX(-140%) skewX(-16deg);} 100% { transform: translateX(220%) skewX(-16deg);} }
 
 /* Reduced motion fallback */
 @media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
   .btn-shimmer::after { display: none; }
 }

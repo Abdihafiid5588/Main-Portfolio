@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import Particles,  { initParticlesEngine } from "react-tsparticles";
-import { loadSlim } from "@tsparticles/slim";
+import Particles, { initParticlesEngine } from 'react-tsparticles'
+import { loadSlim } from '@tsparticles/slim'
+import useRafThrottle from '../utils/useRafThrottle'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -38,10 +39,16 @@ export default function Hero() {
   const containerRef = useRef(null)
   const visualRef = useRef(null)
   const cardRef = useRef(null)
+  const ringPathRef = useRef(null)
   const orbsRef = useRef([])
   const [init, setInit] = useState(false)
   const reduce = usePrefersReducedMotion()
   const isMobile = useIsMobile()
+
+  const PARALLAX_M = useMemo(() => {
+    const raw = parseFloat(import.meta?.env?.VITE_PARALLAX_MULTIPLIER)
+    return Number.isFinite(raw) ? raw : 1
+  }, [])
 
   const enableParticles = useMemo(() => {
     const vite = import.meta?.env?.VITE_ENABLE_PARTICLES
@@ -61,78 +68,142 @@ export default function Hero() {
     return () => { ignore = true }
   }, [])
 
-  // Entrance GSAP timeline for right visuals
+  // Entrance + scroll parallax timeline
   useLayoutEffect(() => {
-    if (!visualRef.current || reduce) return
+    if (!containerRef.current) return
     const ctx = gsap.context(() => {
-      const tl = gsap.timeline({ defaults: { ease: 'power2.out' } })
-      tl.from('.hero-visual .layer', { y: 20, autoAlpha: 0, scale: 0.96, stagger: 0.08, duration: 0.5 })
-      tl.to(cardRef.current, { y: -6, duration: 1.2, ease: 'sine.inOut', yoyo: true, repeat: -1 })
+      const scrubVal = reduce ? 0.1 : 0.6
 
-      // Parallax with ScrollTrigger
-      const mm = gsap.matchMedia()
-      mm.add('(min-width: 768px)', () => {
-        gsap.to('.hero-visual .parallax-slow', {
-          yPercent: 10,
-          ease: 'none',
+      // 1) Headline reveal (GSAP, with Framer fallback if reduced)
+      if (!reduce) {
+        gsap.from('.hero-title .word-clip > *', {
+          yPercent: 100,
+          duration: 0.6,
+          ease: 'power3.out',
+          stagger: 0.045,
+          force3D: true,
+          clearProps: 'transform',
           scrollTrigger: {
             trigger: containerRef.current,
-            start: 'top top',
-            end: 'bottom top',
-            scrub: 0.8,
+            start: 'top 80%',
+            once: true,
           }
         })
-        gsap.to('.hero-visual .parallax-fast', {
-          yPercent: -10,
-          ease: 'none',
-          scrollTrigger: {
-            trigger: containerRef.current,
-            start: 'top bottom',
-            end: 'bottom top',
-            scrub: 0.8,
-          }
-        })
+      }
+
+      // 2) Visual entrance pieces
+      const tl = gsap.timeline({ defaults: { ease: 'power2.out' } })
+      if (!reduce) {
+        tl.from('.hero-visual .blob', { y: 20, autoAlpha: 0, scale: 0.96, stagger: 0.08, duration: 0.5 })
+          .from(cardRef.current, { y: 24, autoAlpha: 0, scale: 0.92, duration: 0.5 }, '-=0.25')
+          .fromTo(ringPathRef.current, { strokeDasharray: 560, strokeDashoffset: 560 }, { strokeDashoffset: 0, autoAlpha: 1, duration: 0.8, ease: 'power2.inOut' }, '-=0.3')
+      }
+
+      // 3) Idle float on card
+      if (!reduce && cardRef.current) {
+        gsap.to(cardRef.current, { y: -6, duration: 1.8, ease: 'sine.inOut', yoyo: true, repeat: -1 })
+      }
+
+      // 4) Scroll parallax (scrubbed)
+      // Background gradient slow offset
+      gsap.to(containerRef.current, {
+        backgroundPositionY: '5%',
+        ease: 'none',
+        scrollTrigger: {
+          trigger: containerRef.current,
+          start: 'top top',
+          end: 'bottom top',
+          scrub: scrubVal,
+        }
       })
-    }, visualRef)
+
+      // Blobs (slow)
+      gsap.to('.hero-visual .parallax-slow', {
+        x: 8 * PARALLAX_M,
+        y: 14 * PARALLAX_M,
+        ease: 'none',
+        scrollTrigger: {
+          trigger: containerRef.current,
+          start: 'top top',
+          end: 'bottom top',
+          scrub: scrubVal,
+        }
+      })
+
+      // Orbs (faster, with gentle scale)
+      gsap.to('.hero-visual .parallax-fast', {
+        x: -14 * PARALLAX_M,
+        y: -18 * PARALLAX_M,
+        scale: 1.05,
+        ease: 'none',
+        scrollTrigger: {
+          trigger: containerRef.current,
+          start: 'top bottom',
+          end: 'bottom top',
+          scrub: scrubVal,
+        }
+      })
+
+      // Card subtle depth
+      if (cardRef.current) {
+        gsap.to(cardRef.current, {
+          y: -6 * PARALLAX_M,
+          rotateZ: -0.5,
+          ease: 'none',
+          scrollTrigger: {
+            trigger: containerRef.current,
+            start: 'top center',
+            end: 'bottom top',
+            scrub: scrubVal,
+          }
+        })
+      }
+    }, containerRef)
     return () => ctx.revert()
   }, [reduce])
 
-  // Pointer parallax
+  // Pointer parallax with RAF throttle + quickSetter
   useEffect(() => {
-    if (!visualRef.current || reduce) return
-    let raf = 0
-    let px = 0, py = 0
+    if (!visualRef.current || reduce || isMobile) return
+
     const el = visualRef.current
-    const onMove = (e) => {
-      const rect = el.getBoundingClientRect()
+    const card = cardRef.current
+    const orbs = orbsRef.current.filter(Boolean)
+
+    const setCard = gsap.quickSetter(card, 'transform')
+    const setters = orbs.map((o) => gsap.quickSetter(o, 'x,y'))
+
+    let rect = el.getBoundingClientRect()
+    const onResize = () => { rect = el.getBoundingClientRect() }
+    window.addEventListener('resize', onResize)
+
+    const handler = (e) => {
       const x = (e.clientX - rect.left) / rect.width - 0.5
       const y = (e.clientY - rect.top) / rect.height - 0.5
-      px = x; py = y
-      if (!raf) raf = requestAnimationFrame(tick)
+      const tx = x * (16 * PARALLAX_M)
+      const ty = y * (12 * PARALLAX_M)
+      const rx = y * 6
+      const ry = -x * 6
+      setCard(`translate3d(${tx}px, ${ty}px, 0) rotateX(${rx}deg) rotateY(${ry}deg) perspective(800px)`)
+      setters.forEach((s, i) => s({ x: x * (12 + i * 2), y: y * (12 + i * 2) }))
     }
-    const tick = () => {
-      raf = 0
-      gsap.to(cardRef.current, { rotateX: py * 6, rotateY: -px * 6, transformPerspective: 800, duration: 0.5 })
-      gsap.to(orbsRef.current, { x: px * 14, y: py * 14, duration: 0.6, stagger: 0.04, ease: 'power2.out' })
-    }
+
+    const onMove = useRafThrottle(handler)
+
     el.addEventListener('pointermove', onMove)
     return () => {
       el.removeEventListener('pointermove', onMove)
-      if (raf) cancelAnimationFrame(raf)
+      window.removeEventListener('resize', onResize)
     }
-  }, [reduce])
+  }, [reduce, isMobile])
 
-  const title = "I build fast, beautiful web experiences — production-ready UI & delightful UX."
+  const title = 'I build fast, beautiful web experiences — production-ready UI & delightful UX.'
 
   return (
-    <section id="home" ref={containerRef} className="relative overflow-hidden">
+    <section id="home" ref={containerRef} className="relative overflow-hidden bg-hero bg-[length:120%_120%]">
       {/* Particles Background */}
       {enableParticles && init && (
-        <Particles
-          id="tsparticles"
-          className="particles-canvas"
-          options={particleOptions}
-        />
+        <Particles id="tsparticles" className="particles-canvas" options={particleOptions} />
       )}
 
       <div className="relative z-10 container mx-auto max-w-7xl px-6 pt-24 md:pt-32 pb-16 md:pb-28">
@@ -140,30 +211,40 @@ export default function Hero() {
           {/* Left: Text */}
           <div className="text-left">
             <RolePill />
-            <HeadingReveal text={title} />
+            <HeadingReveal text={title} reduced={reduce} />
             <p className="mt-5 text-white/70 max-w-xl">Shipping reliable frontends that scale — performance-minded, design-led.</p>
             <div className="mt-8 flex items-center gap-4">
-              <a href="#work" className="btn-shimmer inline-flex items-center rounded-md bg-accent-neon text-[#071028] font-semibold px-5 py-3 shadow-neon hover:shadow-[0_0_28px_rgba(0,245,255,0.55)] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
+              <motion.a whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }} href="#work" className="btn-shimmer inline-flex items-center rounded-md bg-accent-neon text-[#071028] font-semibold px-5 py-3 shadow-neon hover:shadow-[0_0_28px_rgba(0,245,255,0.55)] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
                 View Work
-              </a>
-              <a href="#contact" className="inline-flex items-center rounded-md border border-white/15 px-5 py-3 hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
+              </motion.a>
+              <motion.a whileTap={{ scale: 0.98 }} href="#contact" className="inline-flex items-center rounded-md border border-white/15 px-5 py-3 hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
                 Hire Me
-              </a>
+              </motion.a>
             </div>
           </div>
 
           {/* Right: Visual Composition */}
-          <div ref={visualRef} className="hero-visual relative h-[420px] md:h-[520px]">
+          <div ref={visualRef} className="hero-visual relative h-[420px] md:h-[520px] preserve-3d will-transform">
             {/* Soft glass blobs */}
-            <div className="parallax-slow layer absolute -top-10 -left-10 w-56 h-56 rounded-full bg-white/6 blur-2xl" />
-            <div className="parallax-slow layer absolute top-24 -right-10 w-40 h-40 rounded-full bg-accent-neon/10 blur-2xl" />
-            {/* Neon rings */}
-            <div className="parallax-fast layer absolute -right-8 top-4 w-60 h-60 rounded-full border border-accent-neon/60" />
+            <div className="parallax-slow blob layer absolute -top-10 -left-10 w-56 h-56 rounded-full bg-white/6 blur-2xl" />
+            <div className="parallax-slow blob layer absolute top-24 -right-10 w-40 h-40 rounded-full bg-accent-neon/10 blur-2xl" />
+
+            {/* Neon ring (SVG draw-in) */}
+            <svg className="parallax-fast layer absolute -right-8 top-4" width="240" height="240" viewBox="0 0 240 240" aria-hidden>
+              <defs>
+                <radialGradient id="ringGlow" cx="50%" cy="50%" r="50%">
+                  <stop offset="60%" stopColor="#00f5ff" stopOpacity="1" />
+                  <stop offset="100%" stopColor="#00f5ff" stopOpacity="0" />
+                </radialGradient>
+              </defs>
+              <circle cx="120" cy="120" r="88" fill="url(#ringGlow)" opacity="0.22" />
+              <circle ref={ringPathRef} cx="120" cy="120" r="88" stroke="#00f5ff" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ strokeDasharray: 560, strokeDashoffset: 0 }} />
+            </svg>
 
             {/* Floating Card */}
             <motion.div
               ref={cardRef}
-              className="layer relative mx-auto w-[85%] max-w-sm aspect-[5/3] rounded-2xl bg-gradient-to-br from-[#0b1a2b] to-[#061326] border border-white/10 shadow-glass overflow-hidden"
+              className="layer relative mx-auto w-[85%] max-w-sm aspect-[5/3] rounded-2xl bg-gradient-to-br from-[#0b1a2b] to-[#061326] border border-white/10 shadow-glass overflow-hidden will-transform"
               whileHover={{ scale: 1.02 }}
               transition={{ type: 'spring', stiffness: 220, damping: 20 }}
             >
@@ -190,11 +271,11 @@ export default function Hero() {
               <div
                 key={i}
                 ref={(el) => (orbsRef.current[i] = el)}
-                className={`layer absolute w-8 h-8 rounded-full ${i % 3 === 0 ? 'bg-[#ff6b6b]' : 'bg-[#00f5ff]'} blur-sm opacity-80`}
+                className={`parallax-fast layer absolute w-8 h-8 rounded-full ${i % 3 === 0 ? 'bg-[#ff6b6b]' : 'bg-[#00f5ff]'} blur-sm opacity-80 will-transform`}
                 style={{ top: ["12%","70%","40%","8%"][i], left: ["8%","72%","52%","86%"][i] }}
               />
             ))}
-
+          </div>
         </div>
       </div>
     </section>
@@ -215,17 +296,23 @@ function RolePill() {
   )
 }
 
-function HeadingReveal({ text }) {
+function HeadingReveal({ text, reduced }) {
   const words = text.split(' ')
   const variants = {
     hidden: { y: '100%' },
     show: (i) => ({ y: 0, transition: { delay: 0.06 * i, type: 'spring', stiffness: 400, damping: 28 } })
   }
   return (
-    <h1 className="mt-5 text-3xl md:text-5xl font-heading font-extrabold leading-tight tracking-tight">
+    <h1 className="hero-title mt-5 text-3xl md:text-5xl font-heading font-extrabold leading-tight tracking-tight">
       {words.map((w, i) => (
-        <span className="word-clip" key={i}>
-          <motion.span custom={i} variants={variants} initial="hidden" animate="show" className="inline-block mr-1">
+        <span className="word-clip line" key={i}>
+          <motion.span
+            custom={i}
+            variants={variants}
+            initial={reduced ? 'hidden' : false}
+            animate={reduced ? 'show' : false}
+            className="inline-block mr-1"
+          >
             <span className={w.toLowerCase().includes('fast') || w.toLowerCase().includes('ui') ? 'relative' : ''}>
               {w}
               {(w.toLowerCase().includes('fast') || w.toLowerCase().includes('ui')) && (
