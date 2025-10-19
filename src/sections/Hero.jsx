@@ -1,9 +1,10 @@
+// src/sections/Hero.jsx
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import Particles,  { initParticlesEngine } from "react-tsparticles";
-import { loadSlim } from "@tsparticles/slim";
+import Particles from 'react-tsparticles'
+import { loadSlim } from '@tsparticles/slim'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -27,7 +28,7 @@ const useIsMobile = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const on = () => setM(window.innerWidth < 768)
-    on();
+    on()
     window.addEventListener('resize', on)
     return () => window.removeEventListener('resize', on)
   }, [])
@@ -45,20 +46,20 @@ export default function Hero() {
 
   const enableParticles = useMemo(() => {
     const vite = import.meta?.env?.VITE_ENABLE_PARTICLES
-    const react = import.meta?.env?.REACT_APP_ENABLE_PARTICLES || undefined
-    const value = (vite ?? react)
+    const reactEnv = import.meta?.env?.REACT_APP_ENABLE_PARTICLES || undefined
+    const value = vite ?? reactEnv
     const enabled = value === undefined ? true : String(value).toLowerCase() !== 'false'
     return enabled && !isMobile && !reduce
   }, [reduce, isMobile])
 
-  useEffect(() => {
-    let ignore = false
-    initParticlesEngine(async (engine) => {
+  // particles init callback for react-tsparticles
+  const particlesInit = useCallback(async (engine) => {
+    try {
       await loadSlim(engine)
-    }).then(() => {
-      if (!ignore) setInit(true)
-    })
-    return () => { ignore = true }
+      setInit(true)
+    } catch (err) {
+      console.error('Error loading tsParticles slim bundle', err)
+    }
   }, [])
 
   // Entrance GSAP timeline for right visuals
@@ -80,7 +81,7 @@ export default function Hero() {
             start: 'top top',
             end: 'bottom top',
             scrub: 0.8,
-          }
+          },
         })
         gsap.to('.hero-visual .parallax-fast', {
           yPercent: -10,
@@ -90,7 +91,7 @@ export default function Hero() {
             start: 'top bottom',
             end: 'bottom top',
             scrub: 0.8,
-          }
+          },
         })
       })
     }, visualRef)
@@ -101,19 +102,25 @@ export default function Hero() {
   useEffect(() => {
     if (!visualRef.current || reduce) return
     let raf = 0
-    let px = 0, py = 0
+    let px = 0,
+      py = 0
     const el = visualRef.current
     const onMove = (e) => {
       const rect = el.getBoundingClientRect()
       const x = (e.clientX - rect.left) / rect.width - 0.5
       const y = (e.clientY - rect.top) / rect.height - 0.5
-      px = x; py = y
+      px = x
+      py = y
       if (!raf) raf = requestAnimationFrame(tick)
     }
     const tick = () => {
       raf = 0
-      gsap.to(cardRef.current, { rotateX: py * 6, rotateY: -px * 6, transformPerspective: 800, duration: 0.5 })
-      gsap.to(orbsRef.current, { x: px * 14, y: py * 14, duration: 0.6, stagger: 0.04, ease: 'power2.out' })
+      if (cardRef.current) {
+        gsap.to(cardRef.current, { rotateX: py * 6, rotateY: -px * 6, transformPerspective: 800, duration: 0.5 })
+      }
+      if (orbsRef.current) {
+        gsap.to(orbsRef.current, { x: px * 14, y: py * 14, duration: 0.6, stagger: 0.04, ease: 'power2.out' })
+      }
     }
     el.addEventListener('pointermove', onMove)
     return () => {
@@ -122,17 +129,13 @@ export default function Hero() {
     }
   }, [reduce])
 
-  const title = "I build fast, beautiful web experiences — production-ready UI & delightful UX."
+  const title = 'I build fast, beautiful web experiences — production-ready UI & delightful UX.'
 
   return (
     <section id="home" ref={containerRef} className="relative overflow-hidden">
       {/* Particles Background */}
-      {enableParticles && init && (
-        <Particles
-          id="tsparticles"
-          className="particles-canvas"
-          options={particleOptions}
-        />
+      {enableParticles && (
+        <Particles id="tsparticles" className="particles-canvas" init={particlesInit} options={particleOptions} />
       )}
 
       <div className="relative z-10 container mx-auto max-w-7xl px-6 pt-24 md:pt-32 pb-16 md:pb-28">
@@ -143,10 +146,16 @@ export default function Hero() {
             <HeadingReveal text={title} />
             <p className="mt-5 text-white/70 max-w-xl">Shipping reliable frontends that scale — performance-minded, design-led.</p>
             <div className="mt-8 flex items-center gap-4">
-              <a href="#work" className="btn-shimmer inline-flex items-center rounded-md bg-accent-neon text-[#071028] font-semibold px-5 py-3 shadow-neon hover:shadow-[0_0_28px_rgba(0,245,255,0.55)] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
+              <a
+                href="#work"
+                className="btn-shimmer inline-flex items-center rounded-md bg-accent-neon text-[#071028] font-semibold px-5 py-3 shadow-neon hover:shadow-[0_0_28px_rgba(0,245,255,0.55)] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+              >
                 View Work
               </a>
-              <a href="#contact" className="inline-flex items-center rounded-md border border-white/15 px-5 py-3 hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
+              <a
+                href="#contact"
+                className="inline-flex items-center rounded-md border border-white/15 px-5 py-3 hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+              >
                 Hire Me
               </a>
             </div>
@@ -182,21 +191,27 @@ export default function Hero() {
                 </div>
               </div>
               {/* Floor shadow */}
-              <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-3/4 h-12 rounded-[100%] bg-[radial-gradient(closest-side,rgba(0,0,0,.35),transparent)]" aria-hidden />
+              <div
+                className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-3/4 h-12 rounded-[100%] bg-[radial-gradient(closest-side,rgba(0,0,0,.35),transparent)]"
+                aria-hidden
+              />
             </motion.div>
 
             {/* Floating Neon Orbs */}
-            {[0,1,2,3].map((i) => (
+            {[0, 1, 2, 3].map((i) => (
               <div
                 key={i}
                 ref={(el) => (orbsRef.current[i] = el)}
                 className={`layer absolute w-8 h-8 rounded-full ${i % 3 === 0 ? 'bg-[#ff6b6b]' : 'bg-[#00f5ff]'} blur-sm opacity-80`}
-                style={{ top: ["12%","70%","40%","8%"][i], left: ["8%","72%","52%","86%"][i] }}
+                style={{ top: ['12%', '70%', '40%', '8%'][i], left: ['8%', '72%', '52%', '86%'][i] }}
               />
             ))}
-
-        </div>
-      </div>
+          </div>{' '}
+          {/* ✅ close hero-visual */}
+        </div>{' '}
+        {/* ✅ close grid */}
+      </div>{' '}
+      {/* ✅ close container */}
     </section>
   )
 }
@@ -219,7 +234,7 @@ function HeadingReveal({ text }) {
   const words = text.split(' ')
   const variants = {
     hidden: { y: '100%' },
-    show: (i) => ({ y: 0, transition: { delay: 0.06 * i, type: 'spring', stiffness: 400, damping: 28 } })
+    show: (i) => ({ y: 0, transition: { delay: 0.06 * i, type: 'spring', stiffness: 400, damping: 28 } }),
   }
   return (
     <h1 className="mt-5 text-3xl md:text-5xl font-heading font-extrabold leading-tight tracking-tight">
