@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { motion, useScroll, useTransform } from 'framer-motion'
+import { motion, useScroll, useTransform, useVelocity } from 'framer-motion'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 
@@ -16,49 +16,70 @@ export default function Header() {
   const headerRef = useRef(null)
   const drawerRef = useRef(null)
   const [open, setOpen] = useState(false)
-  const [mounted, setMounted] = useState(false)
-  const { scrollY } = useScroll()
-  const height = useTransform(scrollY, [0, 120], [96, 64])
-  const neonOpacity = useTransform(scrollY, [0, 120], [0.35, 0.9])
   const [lastFocused, setLastFocused] = useState(null)
+  const [activeHref, setActiveHref] = useState('#home')
+
   const reduced = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-  useEffect(() => setMounted(true), [])
+  // Scroll-driven transforms
+  const { scrollY } = useScroll()
+  const height = useTransform(scrollY, [0, 120], [96, 64])
+  const bgOpacity = useTransform(scrollY, [0, 120], [0.12, 0.42])
+  const baseGlow = useTransform(scrollY, [0, 120], [0.25, 0.8])
+  const velocity = useVelocity(scrollY)
+  const velocityGlow = useTransform(velocity, [0, 2000], [0.2, 1])
+  const neonOpacity = useTransform([baseGlow, velocityGlow], ([b, v]) => Math.max(b, v))
 
-  // Neon border pulse when scrolling
+  // Neon header box-shadow subtle pulse based on scroll start/stop
   useEffect(() => {
-    if (!mounted || reduced) return
+    if (reduced) return
     const el = headerRef.current
     if (!el) return
-    let tween
     const onScroll = () => {
-      if (tween) tween.kill()
-      tween = gsap.fromTo(el, { boxShadow: '0 0 0 rgba(0,245,255,0)' }, {
-        boxShadow: '0 0 18px rgba(0,245,255,0.35)',
-        duration: 0.6,
-        ease: 'power2.out'
-      })
+      gsap.fromTo(
+        el,
+        { boxShadow: '0 0 0 rgba(0,245,255,0)' },
+        { boxShadow: '0 0 18px rgba(0,245,255,0.35)', duration: 0.5, ease: 'power2.out' }
+      )
     }
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
-  }, [mounted, reduced])
+  }, [reduced])
 
-  // Mobile drawer animation
+  // Mobile drawer animation (GSAP)
   useLayoutEffect(() => {
     if (!drawerRef.current) return
-    const tl = gsap.timeline({ paused: true })
-    const panel = drawerRef.current
-    const items = panel.querySelectorAll('a, button')
+    const ctx = gsap.context(() => {
+      const tl = gsap.timeline({ paused: true })
+      const panel = drawerRef.current
+      const items = panel.querySelectorAll('a, button')
+      tl.fromTo(panel, { xPercent: -100, autoAlpha: 0 }, { xPercent: 0, autoAlpha: 1, duration: 0.38, ease: 'power3.out' })
+        .from(items, { x: -8, autoAlpha: 0, stagger: 0.06, duration: 0.25, ease: 'power2.out' }, '<0.05')
 
-    tl.fromTo(panel, { xPercent: -100, autoAlpha: 0 }, { xPercent: 0, autoAlpha: 1, duration: 0.38, ease: 'power3.out' })
-      .from(items, { x: -8, autoAlpha: 0, stagger: 0.06, duration: 0.25, ease: 'power2.out' }, '<0.05')
-
-    if (open) tl.play(0)
-    else tl.reverse()
-    return () => tl.kill()
+      if (open) tl.play(0)
+      else tl.reverse(0)
+    })
+    return () => ctx.revert()
   }, [open])
 
-  // Accessibility: focus restore and ESC to close
+  // Nav active link based on scroll position
+  useLayoutEffect(() => {
+    const ctx = gsap.context(() => {
+      NAV_LINKS.forEach(({ href }) => {
+        const el = document.querySelector(href)
+        if (!el) return
+        ScrollTrigger.create({
+          trigger: el,
+          start: 'top center',
+          end: 'bottom center',
+          onToggle: (self) => { if (self.isActive) setActiveHref(href) },
+        })
+      })
+    }, headerRef)
+    return () => ctx.revert()
+  }, [])
+
+  // Accessibility: focus restore and ESC to close + focus trap
   useEffect(() => {
     const btn = document.getElementById('hamburger')
     if (open) {
@@ -72,21 +93,13 @@ export default function Header() {
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape' && open) {
-        setOpen(false)
-      }
+      if (e.key === 'Escape' && open) setOpen(false)
       if (e.key === 'Tab' && open) {
-        // rudimentary focus trap
         const focusables = drawerRef.current.querySelectorAll('a, button')
         const first = focusables[0]
         const last = focusables[focusables.length - 1]
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault()
-          last.focus()
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault()
-          first.focus()
-        }
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
       }
     }
     document.addEventListener('keydown', onKey)
@@ -96,7 +109,7 @@ export default function Header() {
   return (
     <motion.header
       ref={headerRef}
-      style={{ height }}
+      style={{ height, backgroundColor: bgOpacity.to((o) => `rgba(7,16,40,${o})`) }}
       className="sticky top-0 z-40 flex items-center glass border-b border-accent-neon/30"
       aria-label="Primary"
     >
@@ -110,15 +123,15 @@ export default function Header() {
         {/* Center: Nav */}
         <nav className="hidden md:flex items-center gap-2 md:absolute md:left-1/2 md:-translate-x-1/2" aria-label="Main navigation">
           {NAV_LINKS.map((link) => (
-            <NavItem key={link.href} href={link.href} label={link.label} />
+            <NavItem key={link.href} href={link.href} label={link.label} active={activeHref === link.href} />
           ))}
         </nav>
 
         {/* Right: Actions */}
         <div className="hidden md:flex items-center gap-3">
-          <a href="#contact" className="btn-shimmer inline-flex items-center rounded-md bg-accent-neon text-[#071028] font-semibold px-4 py-2 shadow-neon hover:shadow-[0_0_28px_rgba(0,245,255,0.55)] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 transition">
+          <motion.a whileTap={{ scale: 0.98 }} href="#contact" className="btn-shimmer inline-flex items-center rounded-md bg-accent-neon text-[#071028] font-semibold px-4 py-2 shadow-neon hover:shadow-[0_0_28px_rgba(0,245,255,0.55)] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 transition">
             Hire Me
-          </a>
+          </motion.a>
           <ThemeToggle />
         </div>
 
@@ -156,11 +169,11 @@ export default function Header() {
         </div>
         <div className="mt-8 flex flex-col gap-2">
           {NAV_LINKS.map((l) => (
-            <a key={l.href} href={l.href} className="text-lg px-2 py-3 rounded hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300">
+            <a key={l.href} href={l.href} className="text-lg px-2 py-3 rounded hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300" onClick={() => setOpen(false)}>
               {l.label}
             </a>
           ))}
-          <a href="#contact" className="mt-2 inline-flex items-center justify-center rounded-md bg-accent-neon text-[#071028] font-semibold px-4 py-3 shadow-neon">Hire Me</a>
+          <a href="#contact" className="mt-2 inline-flex items-center justify-center rounded-md bg-accent-neon text-[#071028] font-semibold px-4 py-3 shadow-neon" onClick={() => setOpen(false)}>Hire Me</a>
           <div className="pt-2"><ThemeToggle /></div>
         </div>
       </aside>
@@ -175,20 +188,21 @@ export default function Header() {
   )
 }
 
-function NavItem({ href, label }) {
+function NavItem({ href, label, active }) {
   return (
     <motion.a
       href={href}
-      className="relative text-sm px-3 py-2 rounded-md text-white/90 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+      aria-current={active ? 'page' : undefined}
+      className={`relative text-sm px-3 py-2 rounded-md ${active ? 'text-white' : 'text-white/90 hover:text-white'} focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300`}
       whileHover={{ skewX: -2, skewY: 0, y: -1 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 14 }}
+      whileTap={{ scale: 0.98 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 16 }}
     >
       {label}
       <motion.span
-        layoutId={`underline-${label}`}
         className="absolute left-2 right-2 -bottom-0.5 h-[2px] origin-left bg-accent-neon/80"
-        initial={{ scaleX: 0 }}
-        whileHover={{ scaleX: 1 }}
+        initial={false}
+        animate={{ scaleX: active ? 1 : 0 }}
         transition={{ type: 'spring', stiffness: 400, damping: 26 }}
       />
     </motion.a>
